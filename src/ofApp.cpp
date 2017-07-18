@@ -53,6 +53,7 @@ void ofApp::setup(){
     ofEnableAlphaBlending();
     ofSetVerticalSync(true);
     
+    myFont.load("Ubuntu-M.ttf", 12);
     
     //some model / light stuff
     //ofEnableDepthTest();
@@ -249,10 +250,25 @@ void ofApp::update(){
 void ofApp::draw(){
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
+    
+    ofSetColor(255,255,255);
+    if(toggleBar == true) {
+        if(listener.translationMode == false){
+            myFont.drawString("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 48, 30);
+        } else if(listener.rotationMode == false){
+            myFont.drawString("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 40, 30);
+        } else if(listener.rotationMode && listener.translationMode == true){
+            myFont.drawString("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 45, 30);
+        }
+    }
+    
     ofTranslate(ofGetWidth()/2, ofGetHeight()/2);
+    
     
     listener.cam.begin();
     
+    
+
     double rtcScale = 15;
     //Create target reticule
     glDisable(GL_LIGHTING);
@@ -374,19 +390,19 @@ void ofApp::exit(){
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
-    if(key == 'r'){
+    if(key == '1'){
         listener.rotationMode = true;
         listener.translationMode = false;
         if(listener.rotationMode == true){
             cout << "Rotation On" << endl;
         }
-    } else if(key == 't'){
+    } else if(key == '2'){
         listener.translationMode = true;
         listener.rotationMode = false;
         if(listener.translationMode == true){
             cout << "Translation On" << endl;
         }
-    } else if(key == 'y'){
+    } else if(key == '3'){
         listener.translationMode = true;
         listener.rotationMode = true;
         cout << "Rotation + Translation On" << endl;
@@ -400,7 +416,11 @@ void ofApp::keyPressed(int key){
     }
     
     if(key == 'x'){
-        bundle.printCams(10);
+        if(toggleBar == true){
+            toggleBar = false;
+        } else if(toggleBar == false){
+            toggleBar = true;
+        }
     }
     
     if(key == 'c'){

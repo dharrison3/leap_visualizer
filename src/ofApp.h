@@ -29,6 +29,9 @@ public:
     
     ofImage img;
     
+    ofTrueTypeFont myFont;
+    bool toggleBar = true;
+    
     leapListener listener;
     Leap::Controller controller;
     
