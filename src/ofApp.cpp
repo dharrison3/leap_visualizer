@@ -223,16 +223,6 @@ void ofApp::draw(){
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
     
-    ofSetColor(255,255,255);
-    if(toggleBar == true) {
-        if(listener.translationMode == false){
-            myFont.drawString("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 48, 30);
-        } else if(listener.rotationMode == false){
-            myFont.drawString("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 40, 30);
-        } else if(listener.rotationMode && listener.translationMode == true){
-            myFont.drawString("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 45, 30);
-        }
-    }
     
     ofTranslate(ofGetWidth()/2, ofGetHeight()/2);
     
@@ -350,6 +340,29 @@ void ofApp::draw(){
     
     
     listener.cam.end();
+    
+    ofTranslate(-ofGetWidth()/2, -ofGetHeight()/2);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_BUFFER);
+    
+    if(toggleBar == true) {
+        ofEnableAlphaBlending();
+        ofSetColor(31, 96, 149, 200);
+        ofDrawRectRounded(30, 7, ofGetWidth() - 60, 35, 17);
+        ofDisableAlphaBlending();
+        ofSetColor(255,255,255);
+        if(listener.translationMode == false){
+            myFont.drawString("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 48, 30);
+        } else if(listener.rotationMode == false){
+            myFont.drawString("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 37, 30);
+        } else if(listener.rotationMode && listener.translationMode == true){
+            myFont.drawString("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 45, 30);
+        }
+        
+        
+        
+    }
+
     
 }
 
