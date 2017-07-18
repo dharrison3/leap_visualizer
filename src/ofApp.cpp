@@ -1,4 +1,5 @@
 #include "ofApp.h"
+#include "avgRotation.hpp"
 #include <iostream>
 
 int N = 100;
@@ -24,6 +25,29 @@ GLfloat modelView[16];
 
 //--------------------------------------------------------------
 void ofApp::setup(){
+
+#ifdef __APPLE__
+#include "CoreFoundation/CoreFoundation.h"
+#endif
+    
+    // ----------------------------------------------------------------------------
+    // This makes relative paths work in C++ in Xcode by changing directory to the Resources folder inside the .app bundle
+#ifdef __APPLE__
+    CFBundleRef mainBundle = CFBundleGetMainBundle();
+    CFURLRef resourcesURL = CFBundleCopyResourcesDirectoryURL(mainBundle);
+    char path[PATH_MAX];
+    if (!CFURLGetFileSystemRepresentation(resourcesURL, TRUE, (UInt8 *)path, PATH_MAX))
+    {
+        // error!
+    }
+    CFRelease(resourcesURL);
+    
+    chdir(path);
+    std::cout << "Current Path: " << path << std::endl;
+#endif
+    // ----------------------------------------------------------------------------
+    
+    
     ofBackground(0,0,0);
     
     ofEnableAlphaBlending();
@@ -52,13 +76,17 @@ void ofApp::setup(){
     
     controller.addListener(listener);
     
-    bundle = bundleReader("/Users/drake/openFrameworks/apps/myApps/3d_grabber/bin/data/notredame.out");
+    
+    bundle = bundleReader("../../../data/notredame.out");
     
     
-    //avgRot.computeAverageRotation(bundle.camQuats, &averageCamRot);
-    listener.cam.setOrientation(bundle.getCamQuats(0));
-    listener.cam.target.setOrientation(bundle.getCamQuats(0));
-    //set distance from cam to target
+    computeAverageRotation(bundle.camQuats, &averageCamRot);
+    averageCamRot = averageCamRot * glm::quat(0,0,0,1);
+
+    listener.cam.setOrientation(averageCamRot );
+    listener.cam.target.setOrientation(averageCamRot);
+    
+        //set distance from cam to target
     listener.cam.setDistance(300.0);
 
     qobj = gluNewQuadric();

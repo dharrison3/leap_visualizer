@@ -36,7 +36,6 @@ public:
     Leap::Controller controller;
     
     bundleReader bundle;
-    avgRotation avgRot;
     glm::quat averageCamRot;
     
     GLfloat mats[10][4][4] =
