@@ -82,6 +82,7 @@ avgQueue<type> & avgQueue<type>::operator=(const avgQueue<type> rhs) {
     num = rhs.num;
     idx = rhs.idx;
     N = rhs.N;
+    delete[] data;
     data = new type[N];
     for (int i = 0; i < N; i++)
         data[i] = type(rhs.data[i]);

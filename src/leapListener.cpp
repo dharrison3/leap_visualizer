@@ -16,6 +16,7 @@ void leapListener::onConnect(const Leap::Controller& controller){
     rotationMode = true;
     translationMode = false;
     rotationQueue = avgQueue<ofQuaternion>(10);
+    handInputDisabled == false;
 }
 
 void leapListener::onFrame(const Leap::Controller& controller){
@@ -24,7 +25,7 @@ void leapListener::onFrame(const Leap::Controller& controller){
     Leap::Hand hand = frame.hands().frontmost();
     //Leap::CircleGesture circle = frame.gesture();
     //If hands are detected:
-    if(frame.hands().count() > 0){
+    if(frame.hands().count() > 0 && handInputDisabled == false){
         
         
 /*--------------------] Translation [--------------------*/
@@ -49,7 +50,7 @@ void leapListener::onFrame(const Leap::Controller& controller){
             glm::vec3 handMovement_glm(ofHandMovement);
           
             //Push translation vector onto queue and average
-            translationQueue.push(handMovement_glm);
+            translationQueue.push(handMovement_glm * translations_speed);
             averageTrans = translationQueue.average();
             
             //Change cam and target position

@@ -22,9 +22,9 @@ myCam::~myCam(){
 //----------------------------------------
 void myCam::update(ofEventArgs & args){
     viewport = getViewport(this->viewport);
-    if(!bDistanceSet && bAutoDistance){
-        setDistance(getImagePlaneDistance(viewport), true);
-    }
+    //if(!bDistanceSet && bAutoDistance){
+    //    setDistance(getImagePlaneDistance(viewport), true);
+    //}
     if(bMouseInputEnabled){
         
         if(events->getMousePressed()) prevMouse = glm::vec2(events->getMouseX(),events->getMouseY());
@@ -322,9 +322,23 @@ void myCam::updateRotation(){
         setPosition(curRot * (getGlobalPosition()-target.getGlobalPosition()) + target.getGlobalPosition());
         rotate(curRot);
     }else if(bDoRotate){
-        curRot = glm::angleAxis(zRot, prevAxisZ) * glm::angleAxis(yRot, up()) * glm::angleAxis(xRot, prevAxisX);
-        setPosition(curRot * (prevPosition-target.getGlobalPosition()) + target.getGlobalPosition());
-        setOrientation(curRot * prevOrientation);
+        curRot = glm::angleAxis(xRot, glm::vec3(1,0,0)) * glm::angleAxis(yRot, glm::vec3(0,1,0)) * glm::angleAxis(zRot, glm::vec3(0,0,1));
+        
+        
+        //setPosition(curRot * (prevPosition-target.getGlobalPosition()) + target.getGlobalPosition());
+        //setOrientation(curRot * prevOrientation);
+        
+    
+        const ofQuaternion q_old(  prevOrientation  );
+        const ofQuaternion q_delta(  curRot  );
+        const ofQuaternion q_new(q_delta * q_old);
+        
+        // glm type conversions
+        const glm::quat q_new_glm(q_new);
+        
+        //Change cam orientation and position
+        setOrientation(q_new_glm);
+        setPosition(-getLookAtDir() * getDistance() + target.getGlobalPosition());
     }
 }
 
@@ -358,9 +372,9 @@ void myCam::mousePressed(ofMouseEventArgs & mouse){
         prevAxisX = getXAxis();
         prevAxisY = getYAxis();
         prevAxisZ = getZAxis();
-        prevPosition = ofCamera::getGlobalPosition();
-        prevOrientation = ofCamera::getGlobalOrientation();
-        prevTarget = target.getGlobalPosition();
+        prevPosition = ofCamera::getPosition();
+        prevOrientation = ofCamera::getOrientationQuat();
+        prevTarget = target.getPosition();
         
         
         

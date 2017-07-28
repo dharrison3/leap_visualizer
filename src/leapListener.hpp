@@ -26,6 +26,8 @@ public:
     
     bool rotationMode;
     bool translationMode;
+    bool handInputDisabled;
+    float translations_speed;
     
 private:
     

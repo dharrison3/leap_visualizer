@@ -1,31 +1,15 @@
 #include "ofApp.h"
 #include "avgRotation.hpp"
 #include <iostream>
-
-int N = 100;
-ofFbo fb;
-
-//lights
-GLfloat lightOnePosition[] = {0.0, 300.0, 0.0, 1.0};
-GLfloat lightOneColor[] = {0.99, 0.99, 0.99, 1.0};
-
-//Gold material properties
-GLfloat oambient[] = {.24725,.1995,.0745,1};
-GLfloat odiffuse[] = {.75164,.60648,.22648,1};
-GLfloat ospecular[] = {.628281,.555802,.366065,1};
-GLfloat oshininess[] = {51.2};
-
-GLUquadricObj *qobj;
-GLuint pointList;
-
-GLfloat vertices[127431*6*3];
-GLubyte colors[127431*6*4];
-
-GLfloat modelView[16];
+#include <limits>
+#include <algorithm>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
 
+    vertices = NULL;
+    colors = NULL;
+    
 #ifdef __APPLE__
 #include "CoreFoundation/CoreFoundation.h"
 #endif
@@ -47,83 +31,106 @@ void ofApp::setup(){
 #endif
     // ----------------------------------------------------------------------------
     
-    
-    ofBackground(0,0,0);
+    ofBackground(0, 0, 0);
     
     ofEnableAlphaBlending();
     ofSetVerticalSync(true);
     
     myFont.load("Ubuntu-M.ttf", 12);
     
-    //some model / light stuff
-    //ofEnableDepthTest();
-    glShadeModel (GL_SMOOTH);
-    
-    
-    /* initialize lighting */
-    glLightfv (GL_LIGHT0, GL_POSITION, lightOnePosition);
-    glLightfv (GL_LIGHT0, GL_DIFFUSE, lightOneColor);
-    glEnable (GL_LIGHT0);
-    glEnable (GL_LIGHTING);
-    
-    /*glColorMaterial (GL_FRONT, GL_DIFFUSE);
-     glEnable (GL_COLOR_MATERIAL);
-     glMaterialfv(GL_FRONT, GL_DIFFUSE, odiffuse);
-     glMaterialfv(GL_FRONT, GL_AMBIENT, oambient);
-     glMaterialfv(GL_FRONT, GL_SPECULAR, ospecular);
-     glMaterialfv(GL_FRONT, GL_SHININESS, oshininess);
-     glEnable(GL_NORMALIZE);*/
-    
     controller.addListener(listener);
+    bundleFile = "../../../data/notredame.out";
+    setupNewModel();
     
+}
+
+//--------------------------------------------------------------
+void ofApp::setupNewModel(){
     
-    bundle = bundleReader("../../../data/notredame.out");
+    bundle = bundleReader(bundleFile);
+
+    if(vertices!= NULL){
+        delete[] vertices;
+    }
+    if(colors != NULL){
+        delete [] colors;
+    }
     
+    vertices = new GLfloat[bundle.numPoints() * 6 * 3];
+    colors = new GLubyte[bundle.numPoints() * 6 * 4];
+   
+    pointSize = bundle.point_scale / 100;
+    camSize = bundle.point_scale / 100;
+
     
+    //Set initial camera position and rotation to the average of the bundle cameras
     computeAverageRotation(bundle.camQuats, &averageCamRot);
-    averageCamRot = averageCamRot * glm::quat(0,0,0,1);
+    
+    avgCamPos = avgQueue<ofVec3f> (bundle.numCams());
+    for(int i = 0; i < bundle.numCams(); i++){
+        avgCamPos.push(bundle.getCamLocations(i));
+    }
+    averageCamRot = glm::conjugate(averageCamRot);
+    listener.cam.setPosition(avgCamPos.average());
+    
+    //listener.cam.setOrientation(averageCamRot );
+    
+    
+    listener.cam.target.setPosition(ofVec3f(0,0,0));
+    listener.cam.setNearClip(bundle.point_scale / 1000);
+    listener.cam.setFarClip(bundle.point_scale * 1000);
+    listener.translations_speed = bundle.point_scale / 100;
+    
+    glm::vec3 up_vec = glm::vec3(bundle.getCamRotations(0)[3], bundle.getCamRotations(0)[4], bundle.getCamRotations(0)[5]);
+    listener.cam.lookAt(listener.cam.target, up_vec);
+    
+    billboardingOrientation = ofQuaternion(listener.cam.getOrientationQuat());
+    updateDrawingLists();
+}
 
-    listener.cam.setOrientation(averageCamRot );
-    listener.cam.target.setOrientation(averageCamRot);
-    
-        //set distance from cam to target
-    listener.cam.setDistance(300.0);
-
-    qobj = gluNewQuadric();
-    GLint pm;
-    glGetIntegerv(GL_POINT_SIZE_MAX, &pm);
-    
-    cout << "Point size max: " << pm << endl;
-    
+//--------------------------------------------------------------
+void ofApp::updateDrawingLists() {
     glMatrixMode(GL_MODELVIEW);
     
-    pointList = glGenLists(1);
-    glNewList(pointList, GL_COMPILE);
+    pointAndCamsList = glGenLists(1);
+    glNewList(pointAndCamsList, GL_COMPILE);
     
     //enable blending for prettiness
     glEnable(GL_BLEND);
     //glDisable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    int numb = bundle.pointLocs;
-    //numb = 100;
+    int numb = bundle.numPoints();
     
     glPointSize(1);
-    double scale1 = 500;
-    double scale2 = 2.5;
-    double s = 0.008;
     
-    for(int i = 0; i < bundle.camLocs; i++){
+    updateQuadCoords();
+    updateQuadColors();
+    
+    // activate and specify pointer to vertex array
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glColorPointer(4, GL_UNSIGNED_BYTE, 0, colors);
+    glVertexPointer(3, GL_FLOAT, 0, vertices);
+    glDrawArrays(GL_TRIANGLES, 0, numb * 6);
+    
+    // deactivate vertex and color arrays after drawing
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+    
+    
+    // Draw all the cameras
+    for(int i = 0; i < bundle.numCams(); i++){
         glPushMatrix();
         
         glColor3f(255, 255, 255);
         
-        glScalef(scale1, scale1, scale1);
+        //glScalef(scale1, scale1, scale1);
         
         ofMatrix4x4 transform;
         
-        bundle.getCamRotations(i).transpose();
-        
+        //bundle.getCamRotations(i).transpose();
+        float s = camSize;
         int count = 0;
         for(int j = 0; j < 4; j++){
             for(int k = 0; k < 4; k++){
@@ -135,11 +142,8 @@ void ofApp::setup(){
                 } else {
                     transform(j, k) = 0;
                 }
-                
-                
             }
         }
-        
         glMultMatrixf(transform.getPtr());
         
         glTranslatef(-bundle.getCamTranslations(i).x, -bundle.getCamTranslations(i).y, -bundle.getCamTranslations(i).z);
@@ -170,80 +174,114 @@ void ofApp::setup(){
         glPopMatrix();
     }
     
-    for(int i = 0; i < numb; i++){
-        int offset = 18; // 6 vertexes
-        vertices[i * offset + 0] = bundle.getPoint(i).x * scale1;
-        vertices[i * offset + 1] = bundle.getPoint(i).y * scale1;
-        vertices[i * offset + 2] = bundle.getPoint(i).z * scale1;
-        
-        vertices[i * offset + 3] = bundle.getPoint(i).x * scale1;
-        vertices[i * offset + 4] = bundle.getPoint(i).y * scale1 + scale2;
-        vertices[i * offset + 5] = bundle.getPoint(i).z * scale1;
-        
-        vertices[i * offset + 6] = bundle.getPoint(i).x * scale1 + scale2;
-        vertices[i * offset + 7] = bundle.getPoint(i).y * scale1 + scale2;
-        vertices[i * offset + 8] = bundle.getPoint(i).z * scale1;
-        
-        vertices[i * offset + 9] = bundle.getPoint(i).x * scale1;
-        vertices[i * offset + 10] = bundle.getPoint(i).y * scale1;
-        vertices[i * offset + 11] = bundle.getPoint(i).z * scale1;
-        
-        vertices[i * offset + 12] = bundle.getPoint(i).x * scale1 + scale2;
-        vertices[i * offset + 13] = bundle.getPoint(i).y * scale1 + scale2;
-        vertices[i * offset + 14] = bundle.getPoint(i).z * scale1;
-        
-        vertices[i * offset + 15] = bundle.getPoint(i).x * scale1 + scale2;
-        vertices[i * offset + 16] = bundle.getPoint(i).y * scale1;
-        vertices[i * offset + 17] = bundle.getPoint(i).z * scale1;
-        
+    glEndList();
+}
+
+//--------------------------------------------------------------
+void ofApp::updateQuadColors(){
+    for(int i = 0; i < bundle.numPoints(); i++){
         int color_offset = 24; //6 vertices with rgba
         for(int j = 0; j < 6; j++){
             colors[i * color_offset + j*4] = bundle.getColor(i).r;
             colors[i * color_offset + j*4 + 1] = bundle.getColor(i).g;
             colors[i * color_offset + j*4 + 2] = bundle.getColor(i).b;
             colors[i * color_offset + j*4 + 3] = 128;
-            
         }
     }
-    
-    
-    
-    
-    // activate and specify pointer to vertex array
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    glColorPointer(4, GL_UNSIGNED_BYTE, 0, colors);
-    glVertexPointer(3, GL_FLOAT, 0, vertices);
-    glDrawArrays(GL_TRIANGLES, 0, numb * 4);
-    
-    /*
-     for(int i = 0; i < numb; i++){
-     glPushMatrix();
-     glScalef(500,500,500);
-     glTranslatef(bundle.getPoint(i).x, bundle.getPoint(i).y, bundle.getPoint(i).z);
-     glScalef(.005, .005, .005);
-     glColor4ub(bundle.getColor(i).r, bundle.getColor(i).g, bundle.getColor(i).b, 128);
-     
-     // draw a square
-     glDrawArrays(GL_TRIANGLES, 0, 3);
-     
-     
-     glPopMatrix();
-     }
-     */
-    // deactivate vertex and color arrays after drawing
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_COLOR_ARRAY);
-    
-    glEndList();
-    
 }
+
+//--------------------------------------------------------------
+void ofApp::updateQuadCoords() {
+    
+    //--------------------------------------------------------------
+    /*
+    // Problem: This sorting method doesn't sort the point colors, only their
+    // coordinates. That's not right! Instead, create a vector<int> of depth
+    // order indices. Sort the indices, not the vectors themselves.
+    class comparatorClass {
+    public:
+        comparatorClass();
+        comparatorClass(leapListener& _listener) : listener(_listener) {
+            lookatdir = listener.cam.getLookAtDir();
+        }
+        
+        bool operator() (const ofVec3f & first, const ofVec3f & second) const {
+            double depth1 = lookatdir.dot(first);
+            double depth2 = lookatdir.dot(second);
+
+            if(depth1 < depth2){
+                return true;
+            } else {
+                return false;
+            }
+        }
+        
+    private:
+        ofVec3f lookatdir;
+        leapListener& listener;
+    } ;
+    comparatorClass comparatorObject(listener);
+    
+   std::stable_sort(bundle.points.begin(), bundle.points.end(), comparatorObject);
+     */
+    vector<ofVec3f> quadCorners = {
+        ofVec3f(- pointSize / 2, - pointSize / 2, 0),
+        ofVec3f( - pointSize / 2, pointSize - pointSize / 2, 0),
+        ofVec3f(pointSize - pointSize / 2, pointSize - pointSize / 2, 0),
+        ofVec3f(- pointSize / 2, - pointSize / 2, 0),
+        ofVec3f(pointSize - pointSize / 2, pointSize - pointSize / 2, 0),
+        ofVec3f(pointSize - pointSize / 2, - pointSize / 2, 0)
+    };
+    
+    int offset = quadCorners.size() * 3;
+    for(int i = 0; i < bundle.numPoints(); ++i) {
+        for (int j = 0; j < quadCorners.size(); ++j) {
+            
+            rotatedCorner = billboardingOrientation * quadCorners[j];
+            
+            transformedCorner = rotatedCorner + bundle.getPoint(i);
+
+            vertices[i * offset + j * 3 + 0] = transformedCorner.x;
+            vertices[i * offset + j * 3 + 1] = transformedCorner.y;
+            vertices[i * offset + j * 3 + 2] = transformedCorner.z;
+        }
+    }
+}
+
+
+
 
 //--------------------------------------------------------------
 void ofApp::update(){
     stringstream strm;
     strm << "fps: " << ofGetFrameRate();
     ofSetWindowTitle(strm.str());
+    
+
+    if(!interpolate.isDone()){
+        listener.cam.disableMouseInput();
+        listener.handInputDisabled = true;
+        isInterpolating = true;
+        resumePos = true;
+        
+        billboardingOrientation = ofQuaternion(listener.cam.getOrientationQuat());
+
+        updateDrawingLists();
+        interpolate.nextPosition(& mvQuat, & mvVec);
+        listener.cam.setPosition(mvVec);
+        listener.cam.setOrientation(mvQuat);
+        
+    } else {
+        isInterpolating = false;
+        if(resumePos == true){
+            listener.cam.setPosition(savedCamPos);
+            listener.cam.setOrientation(savedCamQuat);
+        }
+        
+        listener.cam.enableMouseInput();
+        listener.handInputDisabled = false;
+        resumePos = false;
+    }
 }
 
 //--------------------------------------------------------------
@@ -251,121 +289,58 @@ void ofApp::draw(){
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
     
-    
     ofTranslate(ofGetWidth()/2, ofGetHeight()/2);
-    
-    
     listener.cam.begin();
     
+    // Draw the point quads and cam lines
+    glPushMatrix();
+    glPointSize(1);
+    glCallList(pointAndCamsList);
+    glPopMatrix();
     
-
-    double rtcScale = 15;
+    double rtcScale = bundle.point_scale / 30;
     //Create target reticule
-    glDisable(GL_LIGHTING);
-    glDisable(GL_BLEND);
-    ofNoFill();
-    ofBeginShape();
-    ofSetColor(240, 60, 40);
-    for(int i = 0; i <= N; i++){
-        ofVertex(rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getX(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getY(), listener.cam.getTarget().getZ());
+    if(reticleOn == true && isInterpolating == false){
+        glDisable(GL_LIGHTING);
+        glDisable(GL_BLEND);
+        ofNoFill();
+        ofBeginShape();
+        ofSetColor(240, 60, 40);
+        int N = 100;
+        for(int i = 0; i <= N; i++){
+            ofVertex(rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getX(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getY(), listener.cam.getTarget().getZ());
+        }
+        ofEndShape();
+        
+        ofBeginShape();
+        ofSetColor(40, 160, 240);
+        for(int i = 0; i <= N; i++){
+            ofVertex(listener.cam.getTarget().getX(), rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getY(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getZ());
+        }
+        ofEndShape();
+        
+        ofBeginShape();
+        ofSetColor(2, 190, 50);
+        for(int i = 0; i <= N; i++){
+            ofVertex(rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getX(), listener.cam.getTarget().getY(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getZ());
+        }
+        ofEndShape();
+        ofFill();
+        glEnable(GL_BLEND);
     }
-    ofEndShape();
     
-    ofBeginShape();
-    ofSetColor(40, 160, 240);
-    for(int i = 0; i <= N; i++){
-        ofVertex(listener.cam.getTarget().getX(), rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getY(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getZ());
-    }
-    ofEndShape();
-    
-    ofBeginShape();
-    ofSetColor(2, 190, 50);
-    for(int i = 0; i <= N; i++){
-        ofVertex(rtcScale * cos((2 * PI * i) / N) + listener.cam.getTarget().getX(), listener.cam.getTarget().getY(), rtcScale * sin((2 * PI * i) / N) + listener.cam.getTarget().getZ());
-    }
-    ofEndShape();
-    ofFill();
-    glEnable(GL_BLEND);
     
     //int material = 7;
     
     glDisable(GL_LIGHTING);
     
-    /*glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-     glBegin(GL_TRIANGLES);
-     glVertex3f(0, 200, 100);
-     glVertex3f(-100, -50, 100);
-     glVertex3f(100, -50, 100);
-     glEnd();
-     */
-    
-    //glBlendFunc(GL_SRC_ALPHA, GL_SRC_ALPHA);
-    //glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
-    //glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-    
-    //ofEnableAlphaBlending();
-    //ofEnableBlendMode(OF_BLENDMODE_ALPHA);
-    //fb.begin();
-    glPushMatrix();
-    
-    /*
-     //Billboarding
-     glGetFloatv (GL_MODELVIEW_MATRIX, modelView);
-     for(int i=0; i<3; i++ )
-     for(int j=0; j<3; j++ ) {
-     if ( i==j )
-     modelView[i*4+j] = 1.0; ///notice a 2D->1D conversion
-     else
-     modelView[i*4+j] = 0.0;
-     }
-     glLoadMatrixf(modelView); //put our new matrix in as the modelview
-     */
-    
-    glPointSize(1);
-    glCallList(pointList);
-    glPopMatrix();
-    //fb.end();
-    //ofDisableAlphaBlending();
-    //fb.draw(0,0);
-    
-    /* for(int i = 0; i < bundle.pointLocs; i++){
-     glPushMatrix();
-     glColor3ub(bundle.getColor(i).r, bundle.getColor(i).g, bundle.getColor(i).b);
-     double scale_factor = 200.0;
-     glScalef(scale_factor,scale_factor,scale_factor);
-     glBegin(GL_POINTS);
-     glPointSize(1);
-     glVertex3f(bundle.getPoint(i).x, bundle.getPoint(i).y, bundle.getPoint(i).z);
-     
-     //         glTranslatef(bundle.getPoint(i).x, bundle.getPoint(i).y, bundle.getPoint(i).z);
-     //       gluSphere(qobj, 0.5f / scale_factor, 6, 6);
-     glEnd();
-     glPopMatrix();
-     }*/
-    
-    /*glMaterialfv(GL_FRONT, GL_DIFFUSE, odiffuse);
-     glMaterialfv(GL_FRONT, GL_AMBIENT, oambient);
-     glMaterialfv(GL_FRONT, GL_SPECULAR, ospecular);
-     glMaterialfv(GL_FRONT, GL_SHININESS, oshininess);
-     
-     glMaterialfv(GL_FRONT, GL_DIFFUSE, mats[material][0]);
-     glMaterialfv(GL_FRONT, GL_AMBIENT, mats[material][1]);
-     glMaterialfv(GL_FRONT, GL_SPECULAR, mats[material][2]);
-     glMaterialfv(GL_FRONT, GL_SHININESS, mats[material][3]);
-     
-     glLightfv (GL_LIGHT0, GL_POSITION, lightOnePosition);
-     
-     ofSetColor(255 * mats[material][1][0], 255 * mats[material][1][1], 255 * mats[material][1][2]);
-     
-     
-     for(int z = -200; z <= 200; z += 200){
-     for(int y = - 200; y <= 200; y += 200){
-     for(int x = -200; x <= 200; x += 200){
-     ofDrawSphere(x, y, z, 80);
-     }
-     }
-     }*/
-    
+    if(isInterpolating == true){
+        stringstream filename;
+        filename << "frame_" << frameCounter << ".png";
+        img.grabScreen(0, 0, ofGetWidth(), ofGetHeight());
+        img.save(filename.str(), OF_IMAGE_QUALITY_MEDIUM);
+        frameCounter++;
+    }
     
     listener.cam.end();
     
@@ -373,18 +348,40 @@ void ofApp::draw(){
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_BUFFER);
     
-    if(toggleBar == true) {
+    // UI elements
+    if(infoPanelOn == true && isInterpolating == false) {
         ofEnableAlphaBlending();
-        ofSetColor(31, 96, 149, 200);
-        ofDrawRectRounded(30, 7, ofGetWidth() - 60, 35, 17);
+        ofSetColor(14, 67, 111, 200);
+        ofDrawRectRounded(ofGetWidth() / 2 - 970 / 2, 7, 970 , 35, 17);
+        ofDrawRectRounded(ofGetWidth() / 2 - 970 / 2, ofGetHeight() - 7 - 35, 970 , 35, 17);
+
+        ofDrawRectRounded(27, 50, 255, 60, 17);
+        ofDrawRectRounded(ofGetWidth() - 283, 50, 255, 60, 17);
+        
         ofDisableAlphaBlending();
+        
+      
         ofSetColor(255,255,255);
+        ostringstream infoBox1;
+        infoBox1 << "Press s to save current camera. \n"
+        "Press c to clear camera list. \n"
+        "Number of items stored: " << camVecCaptured.size();
+        myFont.drawString(infoBox1.str(), 40, 67);
+        
+        ostringstream infoBox2;
+        infoBox2 << "Press m to record fly-through. \n"
+        "\n"
+        "Press l to load a new model.";
+        myFont.drawString(infoBox2.str(), ofGetWidth() - 271, 67);
+        
+        myFont.drawString("Press b to orient points to camera. Use up/down keys to change point size. Use left/right keys to change camera size." , ofGetWidth()/2 - myFont.stringWidth("Press b to orient points to camera. Use up/down keys to change point size. Use left/right keys to change camera size.") / 2, ofGetHeight() - myFont.stringHeight("Press b to orient points to camera. Use up/down arrow keys to change point size. Use left/right keys to change camera size."));
+        
         if(listener.translationMode == false){
-            myFont.drawString("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 48, 30);
+            myFont.drawString("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.", ofGetWidth()/2 - myFont.stringWidth("Currently in Rotation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.") / 2, 30);
         } else if(listener.rotationMode == false){
-            myFont.drawString("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 37, 30);
+            myFont.drawString("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.", ofGetWidth()/2 - myFont.stringWidth("Currently in Translation mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.") / 2, 30);
         } else if(listener.rotationMode && listener.translationMode == true){
-            myFont.drawString("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To hide this panel, press x.", 45, 30);
+            myFont.drawString("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.", ofGetWidth()/2 - myFont.stringWidth("Currently in Combined mode. To change modes, press 1 (rotation), 2 (translation), or 3 (combined). To toggle this UI, press x.") / 2, 30);
         }
         
         
@@ -421,26 +418,69 @@ void ofApp::keyPressed(int key){
         cout << "Rotation + Translation On" << endl;
     }
     
-    
-    if(key == 'b'){
-        cout << "Point location: " << bundle.getPoint(0) << endl;
-        cout << "Point color: " << bundle.getColor(0) << endl << endl;
-        
-    }
-    
     if(key == 'x'){
-        if(toggleBar == true){
-            toggleBar = false;
-        } else if(toggleBar == false){
-            toggleBar = true;
+        if(infoPanelOn == true){
+            infoPanelOn = false;
+            reticleOn = false;
+        } else if(infoPanelOn == false){
+            infoPanelOn = true;
+            reticleOn = true;
+        } else if(isInterpolating == true){
+            interpolate.endInterpolation();
         }
     }
     
-    if(key == 'c'){
-        img.grabScreen(0, 0, ofGetWidth(), ofGetHeight());
-        img.save("screenshot.png");
-        cout << "Screen captured." << endl;
+    if(key == 's'){
+        camVecCaptured.push_back(listener.cam.getPosition());
+        camQuatCaptured.push_back(listener.cam.getOrientationQuat());
     }
+    
+    if(key == 'c'){
+        camVecCaptured.clear();
+        camQuatCaptured.clear();
+    }
+    
+    if(key == 'm'){
+        savedCamPos = listener.cam.getPosition();
+        savedCamQuat = listener.cam.getOrientationQuat();
+        interpolate = camInterpolator(camQuatCaptured, camVecCaptured);
+    }
+    
+    if(key == 'l'){
+        ofFileDialogResult openFileResult= ofSystemLoadDialog("Select a bundle file to load: ");
+        if(openFileResult.bSuccess){
+            camVecCaptured.clear();
+            camQuatCaptured.clear();
+            
+            bundleFile = openFileResult.getPath();
+            cout << bundleFile << endl;
+            setupNewModel();
+        }
+    }
+    
+    if(key == OF_KEY_UP){
+        pointSize *= pointSize_scaleFactor;
+        updateDrawingLists();
+    }
+    if(key == OF_KEY_DOWN){
+        pointSize /= pointSize_scaleFactor;
+        updateDrawingLists();
+    }
+    
+    if(key == OF_KEY_RIGHT){
+        camSize *= camSize_scaleFactor;
+        updateDrawingLists();
+    }
+    if(key == OF_KEY_LEFT){
+        camSize /= camSize_scaleFactor;
+        updateDrawingLists();
+    }
+    
+    if(key == 'b'){
+        billboardingOrientation = ofQuaternion(listener.cam.getOrientationQuat());
+        updateDrawingLists();
+    }
+    
     
 }
 

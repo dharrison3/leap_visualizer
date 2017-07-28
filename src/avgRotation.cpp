@@ -59,8 +59,10 @@ int chooseCentralVertex(const vector<glm::quat> & input_rotations) {
             double distance_sq = riT_rj_aa[0] * riT_rj_aa[0] +
                                  riT_rj_aa[1] * riT_rj_aa[1] +
                                  riT_rj_aa[2] * riT_rj_aa[2];
-            affinity[i] += std::exp(-distance_sq);
-            affinity[j] += std::exp(-distance_sq);
+            if (distance_sq > 0) {
+                affinity[i] += std::exp(-distance_sq);
+                affinity[j] += std::exp(-distance_sq);
+            }
         }
 
     }
@@ -68,6 +70,8 @@ int chooseCentralVertex(const vector<glm::quat> & input_rotations) {
     for (int k = 0; k < N; ++k)
         if (affinity[k] > affinity[max_affinity_index])
             max_affinity_index = k;
+    
+    std::cout << "[centralRotation] Highest affinity was: " << affinity[max_affinity_index] << std::endl;
     
     
     // release the dynamic memory
@@ -102,6 +106,10 @@ void pruneAveragingInput(const vector<glm::quat>& input_rotations, int central_i
 
 void computeAverageRotation(const vector<glm::quat> & input_rotations, glm::quat * result){
     
+    for (int i = 0; i < input_rotations.size(); ++i) {
+    std::cout << "input rot " << i << ": " << input_rotations[i] << std::endl;
+    }
+    
     const bool DEBUG_MODE = true;
     const double STEP_CONVERGENCE_TOL = 1e-8;
     const double MAX_ITERATIONS = 20;
@@ -114,6 +122,7 @@ void computeAverageRotation(const vector<glm::quat> & input_rotations, glm::quat
     }
     
     int central_index = chooseCentralVertex(input_rotations);
+    std::cout << "Central vertex:" << central_index << std::endl;
     std::vector<glm::quat> pruned_rotations;
     pruneAveragingInput(input_rotations, central_index, &pruned_rotations);
     if (DEBUG_MODE) {

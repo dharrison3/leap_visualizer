@@ -39,6 +39,7 @@ public:
     //Return translation vector at i
     ofVec3f getCamTranslations(int i);
     
+    ofVec3f getCamLocations(int i);
     
     
     //Print camera info from last to first
@@ -53,13 +54,20 @@ public:
     
     vector<ofColor> colors;
     
-    int camLocs;
+    int numCams() const { return camFocal.size(); }
+    int numPoints() const { return points.size(); }
     
-    int pointLocs;
+    double point_scale;
 
 private:
     
+    int camLocs;
     
+    int pointLocs;
+    
+    double pointSumX, pointSumY, pointSumZ;
+    double avgX, avgY, avgZ;
+
     
     
 };
